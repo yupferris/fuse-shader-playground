@@ -1,0 +1,48 @@
+<App Background="#000">
+	<DockPanel>
+		<StatusBarBackground Dock="Top" />
+		<BottomBarBackground Dock="Bottom" />
+
+		<!--PrintFrameInterval /-->
+
+		<JavaScript>
+			var Observable = require("FuseJS/Observable");
+
+			var effect = Observable("ice");
+
+			module.exports = {
+				effect: effect,
+
+				showIceEffect: function() {
+					effect.value = "ice";
+				},
+				showTunnelEffect: function() {
+					effect.value = "tunnel";
+				},
+				showWaterEffect: function() {
+					effect.value = "water";
+				}
+			};
+		</JavaScript>
+
+		<DockPanel>
+			<Grid Columns="1*, 1*, 1*" Dock="Top">
+				<Button Text="Ice" Clicked="{showIceEffect}" Grid.Column="0" />
+				<Button Text="Tunnel" Clicked="{showTunnelEffect}" Grid.Column="1" />
+				<Button Text="Water" Clicked="{showWaterEffect}" Grid.Column="2" />
+			</Grid>
+
+			<Match Value="{effect}">
+				<Case String="ice">
+					<IceEffect />
+				</Case>
+				<Case String="tunnel">
+					<TunnelEffect />
+				</Case>
+				<Case String="water">
+					<WaterEffect />
+				</Case>
+			</Match>
+		</DockPanel>
+	</DockPanel>
+</App>

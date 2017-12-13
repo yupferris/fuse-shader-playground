@@ -1,0 +1,252 @@
+<DockPanel ux:Class="WaterEffect">
+	<Button Dock="Bottom" Text="Reset">
+		<Clicked>
+			<ClearRetainBuffer Target="HeightVelocityBuffer" />
+		</Clicked>
+	</Button>
+
+	<ShaderControl BoxSizing="FillAspect" Aspect="1" HitTestMode="LocalBoundsAndChildren">
+		<RetainBuffer ux:Name="HeightVelocityBuffer" Width="64" Height="64" ClearColor="0.5, 0.5, 0, 0" />
+		<TempBuffer ux:Name="WorkBuffer" Width="64" Height="64" />
+		<TempBuffer ux:Name="DisplacementLightBuffer" Width="256" Height="256" />
+
+		<Pass Target="WorkBuffer">
+			<BufferUniform Buffer="HeightVelocityBuffer" UniformName="HeightVelocityTex" />
+
+			<Code ux:Binding="VertexCode">
+				attribute vec2 VertexPosition;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					TexCoords = VertexPosition;
+					gl_Position = vec4(VertexPosition * 2.0 - 1.0, 0, 1);
+				}
+			</Code>
+			<Code ux:Binding="FragmentCode">
+				uniform sampler2D HeightVelocityTex;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					gl_FragColor = texture2D(HeightVelocityTex, TexCoords);
+				}
+			</Code>
+		</Pass>
+
+		<Pass Target="HeightVelocityBuffer">
+			<BufferUniform Buffer="WorkBuffer" UniformName="HeightVelocityTex" />
+
+			<PointerXUniform UniformName="PointerX" />
+			<PointerYUniform UniformName="PointerY" />
+			<PointerDownUniform UniformName="PointerDown" />
+
+			<Code ux:Binding="VertexCode">
+				attribute vec2 VertexPosition;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					TexCoords = VertexPosition;
+					gl_Position = vec4(VertexPosition * 2.0 - 1.0, 0, 1);
+				}
+			</Code>
+			<Code ux:Binding="FragmentCode">
+				uniform sampler2D HeightVelocityTex;
+
+				varying vec2 TexCoords;
+
+				uniform float PointerX;
+				uniform float PointerY;
+				uniform float PointerDown;
+
+				vec2 unpackHeightVelocity(vec2 texCoords)
+				{
+					return texture2D(HeightVelocityTex, texCoords).xy - 0.5;
+				}
+
+				vec4 packHeightVelocity(float height, float velocity)
+				{
+					return vec4(vec2(height, velocity) + 0.5, 0, 0);
+				}
+
+				void main()
+				{
+					const float texelSize = 1.0 / 64.0;
+
+					vec2 heightVel = unpackHeightVelocity(TexCoords);
+					float height = heightVel.x;
+					float vel = heightVel.y;
+
+					float nextVel = vel;
+
+					// Affect velocity with neighboring heights
+					float averageNeighborHeight =
+						(unpackHeightVelocity(TexCoords - vec2(texelSize, 0.0)).x +
+						unpackHeightVelocity(TexCoords + vec2(texelSize, 0.0)).x +
+						unpackHeightVelocity(TexCoords + vec2(0.0, texelSize)).x +
+						unpackHeightVelocity(TexCoords - vec2(0.0, texelSize)).x) * 0.25;
+					nextVel += (averageNeighborHeight - height) * 0.2;
+
+					// Dampen velocity
+					nextVel *= 0.98;
+
+					float nextHeight = height;
+
+					// Affect height with pointer
+					nextHeight -= max((1.0 - distance(TexCoords, vec2(PointerX, PointerY)) * 10.0), 0.0) * 0.5 * PointerDown;
+
+					// Integrate velocity
+					nextHeight += nextVel;
+
+					// Dampen height
+					//  This is kindof a hack, but does the trick :)
+					nextHeight *= 0.98;
+
+					gl_FragColor = packHeightVelocity(nextHeight, nextVel);
+				}
+			</Code>
+		</Pass>
+
+		<Pass Target="DisplacementLightBuffer">
+			<BufferUniform Buffer="HeightVelocityBuffer" UniformName="HeightVelocityTex" />
+
+			<Code ux:Binding="VertexCode">
+				attribute vec2 VertexPosition;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					TexCoords = VertexPosition;
+					gl_Position = vec4(VertexPosition * 2.0 - 1.0, 0, 1);
+				}
+			</Code>
+			<Code ux:Binding="FragmentCode">
+				uniform sampler2D HeightVelocityTex;
+
+				varying vec2 TexCoords;
+
+				vec2 unpackHeightVelocity(vec2 texCoords)
+				{
+					return texture2D(HeightVelocityTex, texCoords).xy - 0.5;
+				}
+
+				vec4 packDisplacementLight(vec2 displacement, float light)
+				{
+					return vec4(vec3(normalize(displacement), light) * 0.5 + 0.5, length(displacement));
+				}
+
+				float ramp(float x)
+				{
+					float a = abs(x);
+					float s = sign(x);
+					float threshold = 0.05;
+					float knee = 0.2;
+					float ramp = smoothstep(threshold, threshold + knee, a);
+					return a * s * ramp;
+				}
+
+				void main()
+				{
+					const float texelSize = 1.0 / 64.0;
+
+					float leftHeight = ramp(unpackHeightVelocity(TexCoords - vec2(texelSize, 0.0)).x);
+					float rightHeight = ramp(unpackHeightVelocity(TexCoords + vec2(texelSize, 0.0)).x);
+					float topHeight = ramp(unpackHeightVelocity(TexCoords + vec2(0.0, texelSize)).x);
+					float bottomHeight = ramp(unpackHeightVelocity(TexCoords - vec2(0.0, texelSize)).x);
+
+					vec2 displacement = vec2(rightHeight - leftHeight, topHeight - bottomHeight);
+
+					float light = clamp(dot(displacement, vec2(0.8, 1.0)), -0.5, 1.0) * 1.5;
+
+					displacement *= 0.2;
+
+					gl_FragColor = packDisplacementLight(displacement, light);
+				}
+			</Code>
+		</Pass>
+
+		<Pass>
+			<LocalToClipMatrixUniform UniformName="LocalToClipMatrix" />
+			<SizeUniform UniformName="Size" />
+
+			<BufferUniform Buffer="DisplacementLightBuffer" UniformName="DisplacementLightTex" />
+			<ImageUniform Url="https://www.geokitten.com/i/10.jpg" UniformName="PictureTex" />
+
+			<Code ux:Binding="VertexCode">
+				uniform mat4 LocalToClipMatrix;
+				uniform vec2 Size;
+
+				attribute vec2 VertexPosition;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					TexCoords = VertexPosition;
+					gl_Position = LocalToClipMatrix * vec4(VertexPosition * Size, 0, 1);
+				}
+			</Code>
+			<Code ux:Binding="FragmentCode">
+				uniform sampler2D DisplacementLightTex;
+				uniform sampler2D PictureTex;
+
+				varying vec2 TexCoords;
+
+				vec3 unpackDisplacementLight(vec2 texCoords)
+				{
+					vec4 t = texture2D(DisplacementLightTex, texCoords);
+					return (t.xyz * 2.0 - 1.0) * vec3(t.w, t.w, 1);
+				}
+
+				void main()
+				{
+					vec3 displacementLight = unpackDisplacementLight(TexCoords);
+					vec2 displacement = displacementLight.xy;
+					float light = displacementLight.z;
+
+					gl_FragColor =
+						vec4(texture2D(PictureTex, TexCoords + displacement).xyz + light, 1)
+						// + vec4(0, 0, 1, 0)
+						;
+				}
+			</Code>
+		</Pass>
+
+		<!--Pass>
+			<LocalToClipMatrixUniform UniformName="LocalToClipMatrix" />
+			<SizeUniform UniformName="Size" />
+
+			<BufferUniform Buffer="DisplacementLightBuffer" UniformName="Tex" />
+
+			<Code ux:Binding="VertexCode">
+				uniform mat4 LocalToClipMatrix;
+				uniform vec2 Size;
+
+				attribute vec2 VertexPosition;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					TexCoords = VertexPosition;
+					gl_Position = LocalToClipMatrix * vec4(VertexPosition * Size, 0, 1);
+				}
+			</Code>
+			<Code ux:Binding="FragmentCode">
+				uniform sampler2D Tex;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					gl_FragColor = vec4(texture2D(Tex, TexCoords).xyz, 1);
+				}
+			</Code>
+		</Pass-->
+	</ShaderControl>
+</DockPanel>

@@ -1,0 +1,137 @@
+<DockPanel ux:Class="IceEffect">
+	<Button Dock="Bottom" Text="Reset">
+		<Clicked>
+			<ClearRetainBuffer Target="HeatBuffer" />
+		</Clicked>
+	</Button>
+
+	<ShaderControl BoxSizing="FillAspect" Aspect="1" HitTestMode="LocalBoundsAndChildren">
+		<RetainBuffer ux:Name="HeatBuffer" Width="64" Height="64" ClearColor="0, 0, 0, 0" />
+		<TempBuffer ux:Name="WorkBuffer" Width="64" Height="64" />
+
+		<Pass Target="WorkBuffer">
+			<BufferUniform Buffer="HeatBuffer" UniformName="HeatTex" />
+
+			<Code ux:Binding="VertexCode">
+				attribute vec2 VertexPosition;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					TexCoords = VertexPosition;
+					gl_Position = vec4(VertexPosition * 2.0 - 1.0, 0, 1);
+				}
+			</Code>
+			<Code ux:Binding="FragmentCode">
+				uniform sampler2D HeatTex;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					gl_FragColor = texture2D(HeatTex, TexCoords);
+				}
+			</Code>
+		</Pass>
+
+		<Pass Target="HeatBuffer">
+			<BufferUniform Buffer="WorkBuffer" UniformName="HeatTex" />
+
+			<PointerXUniform UniformName="PointerX" />
+			<PointerYUniform UniformName="PointerY" />
+			<PointerDownUniform UniformName="PointerDown" />
+
+			<Code ux:Binding="VertexCode">
+				attribute vec2 VertexPosition;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					TexCoords = VertexPosition;
+					gl_Position = vec4(VertexPosition * 2.0 - 1.0, 0, 1);
+				}
+			</Code>
+			<Code ux:Binding="FragmentCode">
+				uniform sampler2D HeatTex;
+
+				varying vec2 TexCoords;
+
+				uniform float PointerX;
+				uniform float PointerY;
+				uniform float PointerDown;
+
+				void main()
+				{
+					const float texelSize = 1.0 / 64.0;
+
+					float heat = texture2D(HeatTex, TexCoords).x;
+
+					// Affect heat with neighboring heats
+					heat =
+						(heat +
+						texture2D(HeatTex, TexCoords - vec2(texelSize, 0.0)).x +
+						texture2D(HeatTex, TexCoords + vec2(texelSize, 0.0)).x +
+						texture2D(HeatTex, TexCoords + vec2(0.0, texelSize)).x +
+						texture2D(HeatTex, TexCoords - vec2(0.0, texelSize)).x) / 5.0;
+
+					// Affect heat with pointer
+					heat += max((1.0 - distance(TexCoords, vec2(PointerX, PointerY)) * 10.0), 0.0) * 0.5 * PointerDown;
+
+					// Dampen heat
+					heat -= 0.002;
+
+					gl_FragColor = vec4(heat, 0, 0, 0);
+				}
+			</Code>
+		</Pass>
+
+		<Pass>
+			<LocalToClipMatrixUniform UniformName="LocalToClipMatrix" />
+			<SizeUniform UniformName="Size" />
+
+			<BufferUniform Buffer="HeatBuffer" UniformName="HeatTex" />
+			<ImageUniform File="Assets/icecracks.png" UniformName="CracksTex" />
+			<ImageUniform File="Assets/icecolor.png" UniformName="ColorTex" />
+			<ImageUniform Url="http://www.babylonpuzzles.com/6866-thickbox_default/500-pcs---curious-kitten---square-by-ravensburger.jpg" UniformName="PictureTex" />
+
+			<Code ux:Binding="VertexCode">
+				uniform mat4 LocalToClipMatrix;
+				uniform vec2 Size;
+
+				attribute vec2 VertexPosition;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					TexCoords = VertexPosition;
+					gl_Position = LocalToClipMatrix * vec4(VertexPosition * Size, 0, 1);
+				}
+			</Code>
+			<Code ux:Binding="FragmentCode">
+				uniform sampler2D HeatTex;
+				uniform sampler2D CracksTex;
+				uniform sampler2D ColorTex;
+				uniform sampler2D PictureTex;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					float inputHeat = texture2D(HeatTex, TexCoords).x;
+					float heat = mix(inputHeat, clamp(inputHeat * 5.0, 0.0, 1.0), texture2D(CracksTex, TexCoords).x);
+
+					float white = pow(1.0 - clamp(abs(heat - 0.2) / 0.2, 0.0, 1.0), 1.6) * 0.8;
+
+					vec3 pictureColor = texture2D(PictureTex, TexCoords).xyz;
+
+					vec3 iceColor = mix(pictureColor, texture2D(ColorTex, TexCoords).xyz, 0.8);
+
+					gl_FragColor = vec4(mix(iceColor, pictureColor, heat) + white, 1);
+				}
+			</Code>
+		</Pass>
+	</ShaderControl>
+</DockPanel>

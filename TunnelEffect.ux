@@ -1,0 +1,169 @@
+<DockPanel ux:Class="TunnelEffect">
+	<WhileVisible>
+		<Cycle Target="Scale.Value" Low="0.98" High="0.99" Frequency="0.44" />
+		<Cycle Target="Rotation.Value" Low="-0.015" High="0.015" Frequency="0.31" />
+		<Cycle Target="OffsetX.Value" Low="-0.002" High="0.002" Frequency="0.13" />
+		<Cycle Target="OffsetY.Value" Low="-0.002" High="0.002" Frequency="0.098" />
+		<Cycle Target="RedAmount.Value" Low="0.97" High="1.05" Frequency="0.11" />
+		<Cycle Target="GreenAmount.Value" Low="0.97" High="1.05" Frequency="0.144" />
+		<Cycle Target="BlueAmount.Value" Low="0.97" High="1.05" Frequency="0.095" />
+	</WhileVisible>
+
+	<Button Dock="Bottom" Text="Reset">
+		<Clicked>
+			<ClearRetainBuffer Target="FeedbackBuffer" />
+		</Clicked>
+	</Button>
+
+	<ShaderControl BoxSizing="FillAspect" Aspect="1" HitTestMode="LocalBoundsAndChildren">
+		<WhilePressed>
+			<Change PointerFade1.Value="1" Duration="0.32" Easing="QuadraticOut" DurationBack="0.2" />
+			<Change PointerFade2.Value="1" Duration="0.32" Easing="QuadraticOut" DurationBack="0.2" />
+		</WhilePressed>
+
+		<RetainBuffer ux:Name="FeedbackBuffer" Width="256" Height="256" ClearColor="0, 0, 0, 0" />
+		<TempBuffer ux:Name="WorkBuffer" Width="256" Height="256" />
+
+		<Pass Target="WorkBuffer">
+			<BufferUniform Buffer="FeedbackBuffer" UniformName="FeedbackTex" />
+
+			<Code ux:Binding="VertexCode">
+				attribute vec2 VertexPosition;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					TexCoords = VertexPosition;
+					gl_Position = vec4(VertexPosition * 2.0 - 1.0, 0, 1);
+				}
+			</Code>
+			<Code ux:Binding="FragmentCode">
+				uniform sampler2D FeedbackTex;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					gl_FragColor = texture2D(FeedbackTex, TexCoords);
+				}
+			</Code>
+		</Pass>
+
+		<Pass Target="FeedbackBuffer">
+			<BufferUniform Buffer="WorkBuffer" UniformName="FeedbackTex" />
+			<ImageUniform Url="http://farm5.static.flickr.com/4127/5012570728_2000a77565.jpg" UniformName="PictureTex" />
+
+			<FloatUniform ux:Name="Scale" UniformName="Scale" />
+			<FloatUniform ux:Name="Rotation" UniformName="Rotation" />
+			<FloatUniform ux:Name="OffsetX" UniformName="OffsetX" />
+			<FloatUniform ux:Name="OffsetY" UniformName="OffsetY" />
+			<FloatUniform ux:Name="RedAmount" UniformName="RedAmount" />
+			<FloatUniform ux:Name="GreenAmount" UniformName="GreenAmount" />
+			<FloatUniform ux:Name="BlueAmount" UniformName="BlueAmount" />
+
+			<PointerXUniform UniformName="PointerX" />
+			<PointerYUniform UniformName="PointerY" />
+
+			<FloatUniform ux:Name="PointerFade1" UniformName="PointerFade" Value="0" />
+
+			<Code ux:Binding="VertexCode">
+				uniform float PointerX;
+				uniform float PointerY;
+
+				uniform float PointerFade;
+
+				attribute vec2 VertexPosition;
+
+				varying vec2 TexCoords;
+
+				varying vec2 Center;
+
+				void main()
+				{
+					TexCoords = VertexPosition;
+
+					Center = vec2(PointerX, PointerY);
+
+					gl_Position = vec4(VertexPosition * 2.0 - 1.0, 0, 1);
+				}
+			</Code>
+			<Code ux:Binding="FragmentCode">
+				uniform sampler2D FeedbackTex;
+				uniform sampler2D PictureTex;
+
+				uniform float PointerFade;
+
+				varying vec2 TexCoords;
+
+				varying vec2 Center;
+
+				uniform float Scale;
+				uniform float Rotation;
+				uniform float OffsetX;
+				uniform float OffsetY;
+				uniform float RedAmount, GreenAmount, BlueAmount;
+
+				void main()
+				{
+					vec2 uv = TexCoords - Center;
+
+					uv *= mix(1.0, Scale, PointerFade);
+
+					// For some reason, pulling this c/s calc into the vertex shader breaks on Mali 400
+					float r = mix(0.0, Rotation, PointerFade);
+					float c = cos(r);
+					float s = sin(r);
+
+					uv = vec2(uv.x * c + uv.y * s, uv.y * c - uv.x * s);
+
+					uv += vec2(OffsetX, OffsetY);
+
+					uv += Center;
+
+					vec3 color = vec3(RedAmount, GreenAmount, BlueAmount);
+
+					gl_FragColor = vec4(mix(texture2D(FeedbackTex, uv).xyz * color, texture2D(PictureTex, TexCoords).xyz, mix(1.0, 0.1, PointerFade)), 1);
+				}
+			</Code>
+		</Pass>
+
+		<Pass>
+			<LocalToClipMatrixUniform UniformName="LocalToClipMatrix" />
+			<SizeUniform UniformName="Size" />
+
+			<BufferUniform Buffer="FeedbackBuffer" UniformName="FeedbackTex" />
+			<ImageUniform Url="http://farm5.static.flickr.com/4127/5012570728_2000a77565.jpg" UniformName="PictureTex" />
+
+			<FloatUniform ux:Name="PointerFade2" UniformName="PointerFade" Value="0" />
+
+			<Code ux:Binding="VertexCode">
+				uniform mat4 LocalToClipMatrix;
+				uniform vec2 Size;
+
+				attribute vec2 VertexPosition;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					TexCoords = VertexPosition;
+					gl_Position = LocalToClipMatrix * vec4(VertexPosition * Size, 0, 1);
+				}
+			</Code>
+			<Code ux:Binding="FragmentCode">
+				uniform sampler2D FeedbackTex;
+				uniform sampler2D PictureTex;
+
+				uniform float PointerFade;
+
+				varying vec2 TexCoords;
+
+				void main()
+				{
+					gl_FragColor = mix(texture2D(PictureTex, TexCoords), texture2D(FeedbackTex, TexCoords), PointerFade);
+				}
+			</Code>
+		</Pass>
+	</ShaderControl>
+</DockPanel>
